@@ -245,7 +245,7 @@ def test_depth_cap_does_not_depend_on_file_order(tmp_path):
                 return f1(q)
         """)
         bodies = {"leaf": "import anthropic\n\ndef leaf(q):\n    return anthropic.Anthropic().messages.create(model='m', messages=q)\n"}
-        for a, b in zip(names[:-1], names[1:]):  # noqa: B905
+        for a, b in zip(names[:-1], names[1:]):
             bodies[a] = f"def {a}(q):\n    return {b}(q)\n"
         for i, name in enumerate(names):
             tag = f"{i:02d}" if callers_first else f"{9 - i:02d}"
