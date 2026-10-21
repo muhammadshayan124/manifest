@@ -225,3 +225,30 @@ def test_http_get_to_a_provider_host_is_not_a_chat_call(tmp_path):
             return requests.get("https://api.openai.com/v1/models")
     """)
     assert chatbot_disclosure.scan_file(path) == []
+
+
+def test_depth_cap_does_not_depend_on_file_order(tmp_path):
+    """Regression: CI on Linux found a chain beyond MAX_DEPTH because callees were scanned
+    before callers. File names here sort callee-first and caller-first; the result must match."""
+    results = []
+    for callers_first in (True, False):
+        root = tmp_path / ("a" if callers_first else "b")
+        root.mkdir()
+        names = ["f1", "f2", "f3", "f4", "f5", "leaf"]
+        write(root, "z_api.py" if callers_first else "a_api.py", """
+            from fastapi import FastAPI
+
+            app = FastAPI()
+
+            @app.post("/x")
+            def route_fn(q):
+                return f1(q)
+        """)
+        bodies = {"leaf": "import anthropic\n\ndef leaf(q):\n    return anthropic.Anthropic().messages.create(model='m', messages=q)\n"}
+        for a, b in zip(names[:-1], names[1:]):  # noqa: B905
+            bodies[a] = f"def {a}(q):\n    return {b}(q)\n"
+        for i, name in enumerate(names):
+            tag = f"{i:02d}" if callers_first else f"{9 - i:02d}"
+            write(root, f"{tag}_{name}.py", bodies[name])
+        results.append(len(scan_path(root)))
+    assert results[0] == results[1] == 0

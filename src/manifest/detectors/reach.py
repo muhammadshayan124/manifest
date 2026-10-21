@@ -66,20 +66,23 @@ def _reaching_paths(facts: list[FuncFacts]) -> dict[int, list[FuncFacts]]:
 
     reaching: dict[int, list[FuncFacts]] = {id(f): [f] for f in facts if f.chat_call is not None}
     for _ in range(MAX_DEPTH):
-        grew = False
+        # Level-synchronous: each round extends chains by exactly one hop, using only what
+        # was reachable at the start of the round. Updating in place let a chain grow
+        # several hops in one pass whenever callees happened to be scanned first, which
+        # made MAX_DEPTH (and therefore the findings) depend on file iteration order.
+        frozen = dict(reaching)
         for f in facts:
-            if id(f) in reaching:
+            if id(f) in frozen:
                 continue
             for callee in sorted(f.callees):
                 if callee.startswith("__"):
                     continue
                 defs = _candidates(f, by_name.get(callee, []))
-                target = next((d for d in defs if d is not f and id(d) in reaching), None)
+                target = next((d for d in defs if d is not f and id(d) in frozen), None)
                 if target is not None:
-                    reaching[id(f)] = [f, *reaching[id(target)]]
-                    grew = True
+                    reaching[id(f)] = [f, *frozen[id(target)]]
                     break
-        if not grew:
+        if len(reaching) == len(frozen):
             break
     return reaching
 
@@ -89,6 +92,7 @@ def _is_conversational(name: str) -> bool:
 
 
 def indirect_findings(facts: list[FuncFacts]) -> list[Finding]:
+    facts = sorted(facts, key=lambda f: (f.file, f.lineno, f.qualname))  # scan-order independent
     reaching = _reaching_paths(facts)
     entries: list[tuple[FuncFacts, list[FuncFacts]]] = [
         (f, path)

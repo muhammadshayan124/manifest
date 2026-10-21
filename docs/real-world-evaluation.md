@@ -79,6 +79,7 @@ Every item here was invisible to the fixtures I wrote myself.
 12. **Wrapper functions were reported as interfaces.** `create_chat_completion` is the LLM layer, not a chat UI.
 13. **Streamlit and Gradio chat apps were skipped entirely.** They are module-level scripts, which the function-scoped design ignored.
 14. **The architecture most real apps use was unseen.** `route -> service -> client wrapper -> SDK` was reported as nothing. The call-graph pass (`detectors/reach.py`) fixes this.
+15. **The depth cap depended on file order.** Found by CI, not by any real repository: the same test passed on Windows and failed on Linux. `MAX_DEPTH` was meant to cap a chain at a number of hops, but chains were extended in place, so a chain could grow several hops in one pass whenever callees were scanned before callers. The search is now level-synchronous and facts are processed in a fixed order. All development and held-out counts above were re-run afterwards and did not change.
 
 ## Known limits
 

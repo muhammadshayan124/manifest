@@ -21,7 +21,7 @@ Every finding cites the provision it checks. The reference text is in
 
 v0.1 passed its own tests and flagged `asyncio.run` and minified JavaScript bundles on real
 projects. Running it on 13 open-source and personal codebases, and reading every finding,
-found 14 distinct defects that fixtures could not. The write-up, with per-repo numbers and the
+found 14 distinct defects that fixtures could not (a 15th, an order-dependent depth cap, was found later by CI on Linux). The write-up, with per-repo numbers and the
 parts that don't flatter the tool, is in
 [`docs/real-world-evaluation.md`](docs/real-world-evaluation.md).
 
@@ -115,7 +115,7 @@ SDK or raw HTTP, and looks for a watermark/provenance term (`c2pa`, `synthid`, `
 ## Development
 
 ```bash
-pytest          # 93 tests
+pytest          # 98 tests
 ```
 
 The suite includes a negative control (a batch job that calls a chat API but is not an
