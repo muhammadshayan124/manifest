@@ -1,0 +1,7 @@
+- id: manifest
+  name: manifest (EU AI Act Article 50)
+  description: Flag AI interfaces and generated-content pipelines missing disclosure or labeling
+  entry: manifest scan . --fail-on likely
+  language: python
+  pass_filenames: false
+  types_or: [python, ts, tsx, javascript, jsx]

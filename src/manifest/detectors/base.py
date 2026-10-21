@@ -14,6 +14,7 @@ from manifest.article50 import Provision
 class Confidence(str, Enum):
     likely_violation = "likely_violation"  # pattern matched, no disclosure signal found nearby
     needs_review = "needs_review"          # pattern matched, a disclosure signal WAS found -- verify it's real
+    low_signal = "low_signal"              # pattern matched, but only a private helper looks user-facing; hidden by default
 
 
 @dataclass

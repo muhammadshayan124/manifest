@@ -1,10 +1,12 @@
+from enum import Enum
 from pathlib import Path
 from typing import Annotated
 
 import typer
 from rich.console import Console
 
-from manifest.report import print_table, to_json
+from manifest.detectors.base import Confidence
+from manifest.report import print_table, split_by_visibility, to_json, to_sarif
 from manifest.scan import scan_path
 
 app = typer.Typer(
@@ -12,6 +14,18 @@ app = typer.Typer(
     "Flags candidate compliance gaps for human review -- see README before relying on it."
 )
 console = Console()
+
+
+class OutputFormat(str, Enum):
+    table = "table"
+    json = "json"
+    sarif = "sarif"
+
+
+class FailOn(str, Enum):
+    none = "none"
+    likely = "likely"  # fail only on likely_violation: the findings with no disclosure signal at all
+    any = "any"        # fail on every shown finding, including needs_review
 
 
 @app.callback()
@@ -28,22 +42,33 @@ def _main() -> None:
 @app.command()
 def scan(
     path: Annotated[Path, typer.Argument(help="File or directory to scan")] = Path("."),
-    json_output: Annotated[bool, typer.Option("--json", help="Output JSON instead of a table")] = False,
-    fail_on_findings: Annotated[bool, typer.Option(help="Exit non-zero if anything is flagged (for CI)")] = False,
+    output_format: Annotated[OutputFormat, typer.Option("--format", help="Output format; sarif feeds GitHub code scanning")] = OutputFormat.table,
+    json_output: Annotated[bool, typer.Option("--json", help="Shorthand for --format json")] = False,
+    include_low_signal: Annotated[bool, typer.Option(help="Also show low_signal findings (private helpers matched by name only)")] = False,
+    fail_on: Annotated[FailOn, typer.Option(help="Exit non-zero when findings of this kind exist (for CI)")] = FailOn.none,
+    fail_on_findings: Annotated[bool, typer.Option(help="Deprecated alias for --fail-on any")] = False,
 ) -> None:
     """Scan a file or directory for Article 50 transparency gaps."""
     if not path.exists():
         console.print(f"[red]No such path: {path}[/red]")
         raise typer.Exit(code=2)
 
-    findings = scan_path(path)
-
     if json_output:
-        print(to_json(findings))
-    else:
-        print_table(findings, console)
+        output_format = OutputFormat.json
+    if fail_on_findings:
+        fail_on = FailOn.any
 
-    if fail_on_findings and findings:
+    shown, hidden = split_by_visibility(scan_path(path), include_low_signal)
+
+    if output_format == OutputFormat.json:
+        print(to_json(shown, hidden_low_signal=hidden))
+    elif output_format == OutputFormat.sarif:
+        print(to_sarif(shown))
+    else:
+        print_table(shown, console, hidden_low_signal=hidden)
+
+    likely = any(f.confidence == Confidence.likely_violation for f in shown)
+    if (fail_on == FailOn.any and shown) or (fail_on == FailOn.likely and likely):
         raise typer.Exit(code=1)
 
 

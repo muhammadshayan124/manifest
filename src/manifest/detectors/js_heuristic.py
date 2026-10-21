@@ -7,28 +7,30 @@ LLM apps' stacks (a Next.js/React frontend calling the same backends).
 Granularity is per-file, not per-function like the Python detectors -- regex can't
 reliably tell which function a match falls inside once JSX/TSX is in the mix. Every
 finding says so. Treat this detector's output as a rougher signal than the Python ones.
+
+Suppress a finding with `// manifest: ignore` on the matched line.
 """
 
 import re
 from pathlib import Path
 
-from manifest.article50 import CHATBOT_DISCLOSURE, GENERATED_CONTENT_MARKING
+from manifest.article50 import CHATBOT_DISCLOSURE, GENERATED_CONTENT_MARKING, Provision
 from manifest.detectors.base import Confidence, Finding
 
-_LLM_SDK_IMPORT_RE = re.compile(
-    r"""from\s+["'](openai|@anthropic-ai/sdk|ai|langchain)["']|require\(["'](openai|@anthropic-ai/sdk|ai|langchain)["']\)""",
-    re.IGNORECASE,
-)
-_CHAT_CALL_RE = re.compile(
-    r"\.chat\.completions\.create\(|\.messages\.create\(|\buseChat\(|\bstreamText\(|\bgenerateText\(",
-)
+_IMPORT_RE = re.compile(r"""(?:from\s+|require\(\s*|import\(\s*)["']((?:@[\w.-]+/)?[\w.-]+)""")
 
-_GENERATIVE_SDK_IMPORT_RE = re.compile(
-    r"""from\s+["'](openai|elevenlabs|replicate)["']|require\(["'](openai|elevenlabs|replicate)["']\)""",
-    re.IGNORECASE,
+_LLM_PACKAGES = (
+    "openai", "@anthropic-ai/sdk", "ai", "@ai-sdk/", "langchain", "@langchain/",
+    "@google/generative-ai", "@google/genai", "@mistralai/mistralai", "groq-sdk", "ollama",
+)
+_GENERATIVE_PACKAGES = ("openai", "elevenlabs", "@elevenlabs/", "replicate", "@fal-ai/", "@google/genai")
+
+_CHAT_CALL_RE = re.compile(
+    r"\.chat\.completions\.create\(|\.responses\.create\(|\.messages\.create\(|\.generateContent\(|"
+    r"\buseChat\(|\bstreamText\(|\bgenerateText\(|\bstreamObject\(|\bgenerateObject\("
 )
 _GENERATIVE_CALL_RE = re.compile(
-    r"\.images\.generate\(|\.audio\.speech\.create\(|\breplicate\.run\(",
+    r"\.images\.generate\(|\.audio\.speech\.create\(|\breplicate\.run\(|\.textToSpeech\.convert\(|\bfal\.(?:run|subscribe)\("
 )
 
 _DISCLOSURE_RE = re.compile(
@@ -38,11 +40,36 @@ _DISCLOSURE_RE = re.compile(
     re.IGNORECASE,
 )
 _LABELING_RE = re.compile(
-    r"c2pa|content.?credentials|watermark|piexif|exif|metadata|provenance|ai.?generated|artificially generated",
+    r"c2pa|content.?credentials|watermark|synthid|piexif|iptc|xmp|provenance|ai.?generated|artificially generated",
     re.IGNORECASE,
 )
 
 _JS_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx"}
+
+
+def _imports(text: str, packages: tuple[str, ...]) -> bool:
+    for pkg in _IMPORT_RE.findall(text):
+        if any(pkg == p or (p.endswith("/") and pkg.startswith(p)) or pkg.startswith(p + "/") for p in packages):
+            return True
+    return False
+
+
+def _finding(
+    path: Path, text: str, match: re.Match[str], provision: Provision, signal_found: bool,
+    found_msg: str, missing_msg: str, scope_note: str,
+) -> Finding | None:
+    lines = text.splitlines()
+    line = text[: match.start()].count("\n") + 1
+    if 0 < line <= len(lines) and "manifest: ignore" in lines[line - 1].lower():
+        return None
+    return Finding(
+        file=str(path),
+        line=line,
+        provision=provision,
+        confidence=Confidence.needs_review if signal_found else Confidence.likely_violation,
+        detail=scope_note + (found_msg if signal_found else missing_msg),
+        snippet=lines[line - 1].strip() if 0 < line <= len(lines) else "",
+    )
 
 
 def scan_file(path: Path) -> list[Finding]:
@@ -51,44 +78,24 @@ def scan_file(path: Path) -> list[Finding]:
     text = path.read_text(encoding="utf-8", errors="replace")
     findings: list[Finding] = []
 
-    if _LLM_SDK_IMPORT_RE.search(text) and (chat_match := _CHAT_CALL_RE.search(text)):
-        line = text[: chat_match.start()].count("\n") + 1
-        has_disclosure = bool(_DISCLOSURE_RE.search(text))
-        findings.append(
-            Finding(
-                file=str(path),
-                line=line,
-                provision=CHATBOT_DISCLOSURE,
-                confidence=Confidence.needs_review if has_disclosure else Confidence.likely_violation,
-                detail=(
-                    "File imports an LLM SDK and contains a chat-completion-shaped call "
-                    "(file-level match, not function-scoped -- see module docstring). "
-                    + ("AI-disclosure language found somewhere in this file -- verify it's actually rendered to the user."
-                       if has_disclosure else
-                       "No AI-disclosure language found anywhere in this file.")
-                ),
-                snippet=text.splitlines()[line - 1].strip() if line - 1 < len(text.splitlines()) else "",
-            )
+    if _imports(text, _LLM_PACKAGES) and (chat_match := _CHAT_CALL_RE.search(text)):
+        f = _finding(
+            path, text, chat_match, CHATBOT_DISCLOSURE, bool(_DISCLOSURE_RE.search(text)),
+            found_msg="AI-disclosure language found somewhere in this file -- verify it's actually rendered to the user.",
+            missing_msg="No AI-disclosure language found anywhere in this file.",
+            scope_note="File imports an LLM SDK and contains a chat-completion-shaped call (file-level match, not function-scoped -- see module docstring). ",
         )
+        if f:
+            findings.append(f)
 
-    if _GENERATIVE_SDK_IMPORT_RE.search(text) and (gen_match := _GENERATIVE_CALL_RE.search(text)):
-        line = text[: gen_match.start()].count("\n") + 1
-        has_labeling = bool(_LABELING_RE.search(text))
-        findings.append(
-            Finding(
-                file=str(path),
-                line=line,
-                provision=GENERATED_CONTENT_MARKING,
-                confidence=Confidence.needs_review if has_labeling else Confidence.likely_violation,
-                detail=(
-                    "File imports a generative-content SDK and calls a generation API "
-                    "(file-level match, not function-scoped). "
-                    + ("A labeling/watermarking-related term found somewhere in this file -- verify it actually marks the output."
-                       if has_labeling else
-                       "No watermarking/labeling/metadata term found anywhere in this file.")
-                ),
-                snippet=text.splitlines()[line - 1].strip() if line - 1 < len(text.splitlines()) else "",
-            )
+    if _imports(text, _GENERATIVE_PACKAGES) and (gen_match := _GENERATIVE_CALL_RE.search(text)):
+        f = _finding(
+            path, text, gen_match, GENERATED_CONTENT_MARKING, bool(_LABELING_RE.search(text)),
+            found_msg="A labeling/watermarking-related term found somewhere in this file -- verify it actually marks the output.",
+            missing_msg="No watermarking/labeling/provenance term found anywhere in this file.",
+            scope_note="File imports a generative-content SDK and calls a generation API (file-level match, not function-scoped). ",
         )
+        if f:
+            findings.append(f)
 
     return findings

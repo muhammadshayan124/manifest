@@ -1,6 +1,6 @@
 [project]
 name = "manifest"
-version = "0.1.0"
+version = "0.2.0"
 description = "Static analysis for EU AI Act Article 50 transparency obligations -- finds AI interfaces and generated-content pipelines missing disclosure/labeling"
 requires-python = ">=3.11"
 dependencies = [
@@ -16,3 +16,9 @@ dev = ["pytest>=8.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+extend-exclude = ["tests/fixtures"]
+
+[tool.ruff.lint]
+ignore = ["RUF007"]

@@ -1,0 +1,32 @@
+name: manifest
+description: Static analysis for EU AI Act Article 50 transparency obligations (review aid, not a compliance certificate)
+branding:
+  icon: shield
+  color: blue
+inputs:
+  path:
+    description: File or directory to scan
+    default: "."
+  fail-on:
+    description: "Fail the job on: none, likely (likely_violation only) or any"
+    default: "none"
+  upload-sarif:
+    description: Upload results to GitHub code scanning (needs `security-events: write`)
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+    - shell: bash
+      run: pip install "${{ github.action_path }}"
+    - shell: bash
+      run: manifest scan "${{ inputs.path }}" --format sarif > manifest.sarif
+    - if: inputs.upload-sarif == 'true'
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: manifest.sarif
+        category: manifest
+    - shell: bash
+      run: manifest scan "${{ inputs.path }}" --format json --fail-on "${{ inputs['fail-on'] }}" > /dev/null
