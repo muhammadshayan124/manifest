@@ -1,11 +1,12 @@
 [project]
 name = "manifest"
-version = "0.2.0"
+version = "0.3.0"
 description = "Static analysis for EU AI Act Article 50 transparency obligations -- finds AI interfaces and generated-content pipelines missing disclosure/labeling"
 requires-python = ">=3.11"
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]

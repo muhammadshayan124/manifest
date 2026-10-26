@@ -1,0 +1,11 @@
+name: Example Foundation Model
+version: "1.0"
+provider: Example Labs
+role: provider
+intended_purpose: "General-purpose language model offered through an API."
+transparency:
+  generates_synthetic_content: true
+gpai:
+  is_gpai_model: true
+  training_compute_flops: 3.0e25
+  open_source_license: false

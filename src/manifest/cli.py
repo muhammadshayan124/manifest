@@ -5,6 +5,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 
+from manifest.act.cli import act_app
 from manifest.detectors.base import Confidence
 from manifest.report import print_table, split_by_visibility, to_json, to_sarif
 from manifest.scan import scan_path
@@ -14,6 +15,7 @@ app = typer.Typer(
     "Flags candidate compliance gaps for human review -- see README before relying on it."
 )
 console = Console()
+app.add_typer(act_app, name="act")
 
 
 class OutputFormat(str, Enum):

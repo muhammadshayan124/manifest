@@ -1,0 +1,146 @@
+"""A conformity checklist that lives in the repo and stays honest.
+
+`build` derives the items a system needs from its classification. Statuses and evidence you
+have recorded are merged back by item id on every regeneration, so changing the profile never
+wipes your progress. Two rules keep the checklist from becoming theatre:
+
+* An item cannot be `done` without evidence (a link, a document path, a ticket).
+* Article 50 items cannot be `done` while the code scanner still reports a likely violation
+  for them. The scanner cannot prove compliance, but it can contradict a claim of it.
+
+Applicable items that are still open are reported but, by default, do not fail a build:
+failing on `todo` makes teams switch the check off. `--fail-on open` is there for the
+stage when you want it strict.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+
+import yaml
+
+from manifest.act.classify import Classification
+from manifest.detectors.base import Confidence, Finding
+
+STATUSES = ("todo", "in_progress", "done", "not_applicable")
+_SCAN_ITEM = {"Article 50(1)": "art50_1", "Article 50(2)": "art50_2"}
+
+
+@dataclass
+class Item:
+    id: str
+    citation: str
+    title: str
+    role: str
+    status: str = "todo"
+    evidence: str = ""
+    notes: str = ""
+    scan: str = ""  # static-scan summary for Art. 50 items; informational, never sets `done`
+
+
+@dataclass
+class Checklist:
+    system: str
+    tier: str
+    items: list[Item] = field(default_factory=list)
+    dropped: list[str] = field(default_factory=list)  # ids no longer applicable after a profile change
+
+    def get(self, item_id: str) -> Item:
+        for it in self.items:
+            if it.id == item_id:
+                return it
+        raise KeyError(f"no checklist item '{item_id}'")
+
+    def counts(self) -> dict[str, int]:
+        c = dict.fromkeys(STATUSES, 0)
+        for it in self.items:
+            c[it.status] += 1
+        return c
+
+    @property
+    def progress(self) -> tuple[int, int]:
+        """(resolved, applicable): resolved = done; not_applicable items are excluded from the total."""
+        applicable = [it for it in self.items if it.status != "not_applicable"]
+        return sum(it.status == "done" for it in applicable), len(applicable)
+
+
+def build(c: Classification, existing: Checklist | None = None) -> Checklist:
+    prior = {it.id: it for it in existing.items} if existing else {}
+    items = []
+    for r in c.requirements:
+        old = prior.get(r.id)
+        items.append(Item(
+            id=r.id, citation=r.citation, title=r.title, role=r.role,
+            status=old.status if old else "todo", evidence=old.evidence if old else "",
+            notes=old.notes if old else "", scan=old.scan if old else "",
+        ))
+    kept = {it.id for it in items}
+    return Checklist(system=c.system, tier=c.tier, items=items, dropped=sorted(set(prior) - kept))
+
+
+def apply_scan(cl: Checklist, findings: list[Finding]) -> None:
+    """Record what the static scanner saw against the Article 50 items. Never changes a status."""
+    by_item: dict[str, list[Finding]] = {}
+    for f in findings:
+        item_id = _SCAN_ITEM.get(f.provision.citation)
+        if item_id:
+            by_item.setdefault(item_id, []).append(f)
+    for item_id, fs in by_item.items():
+        try:
+            it = cl.get(item_id)
+        except KeyError:
+            continue
+        likely = sum(f.confidence == Confidence.likely_violation for f in fs)
+        review = sum(f.confidence == Confidence.needs_review for f in fs)
+        it.scan = f"{likely} likely_violation, {review} needs_review (static scan)"
+    for item_id in _SCAN_ITEM.values():
+        try:
+            it = cl.get(item_id)
+        except KeyError:
+            continue
+        if not it.scan:
+            it.scan = "0 findings (static scan; absence of findings is not proof of compliance)"
+
+
+def _likely(it: Item) -> int:
+    head = it.scan.split(" ", 1)[0]
+    return int(head) if head.isdigit() and "likely_violation" in it.scan else 0
+
+
+def problems(cl: Checklist, fail_on: str = "inconsistent") -> list[str]:
+    """Reasons the checklist should fail a build. fail_on: 'inconsistent' (default) or 'open'."""
+    out = []
+    for it in cl.items:
+        if it.status == "done" and not it.evidence.strip():
+            out.append(f"{it.id} ({it.citation}) is marked done without evidence")
+        if it.status == "done" and it.id in _SCAN_ITEM.values() and _likely(it) > 0:
+            out.append(f"{it.id} ({it.citation}) is marked done but the scanner still reports {_likely(it)} likely violation(s)")
+        if fail_on == "open" and it.status in ("todo", "in_progress"):
+            out.append(f"{it.id} ({it.citation}) is still {it.status}")
+    return out
+
+
+def save(cl: Checklist, path: str | Path) -> None:
+    doc = {
+        "system": cl.system, "tier": cl.tier,
+        "note": "Generated by `manifest act checklist`. Edit status/evidence/notes; ids are stable. Not legal advice.",
+        "items": [
+            {"id": i.id, "citation": i.citation, "title": i.title, "role": i.role, "status": i.status,
+             "evidence": i.evidence, "notes": i.notes, "scan": i.scan}
+            for i in cl.items
+        ],
+    }
+    Path(path).write_text(yaml.safe_dump(doc, sort_keys=False, allow_unicode=True, width=100), encoding="utf-8")
+
+
+def load(path: str | Path) -> Checklist:
+    raw = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    items = []
+    for r in raw.get("items", []):
+        if r.get("status") not in STATUSES:
+            raise ValueError(f"item {r.get('id')}: status must be one of {STATUSES}, got {r.get('status')!r}")
+        items.append(Item(id=r["id"], citation=r.get("citation", ""), title=r.get("title", ""), role=r.get("role", ""),
+                          status=r["status"], evidence=r.get("evidence", "") or "", notes=r.get("notes", "") or "",
+                          scan=r.get("scan", "") or ""))
+    return Checklist(system=raw.get("system", ""), tier=raw.get("tier", ""), items=items)

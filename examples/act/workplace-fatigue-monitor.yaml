@@ -1,0 +1,8 @@
+name: Driver Fatigue Monitor
+version: "1.1.0"
+provider: Example Corp
+role: provider
+intended_purpose: "Infers driver fatigue from facial cues for the safety of workers operating heavy machinery."
+prohibited_practices:
+  declared: ["f"]
+  exception_claimed: ["f"]

@@ -1,6 +1,10 @@
 # manifest
 
-Static analysis for [EU AI Act Article 50](https://artificialintelligenceact.eu/article/50/)
+Two tools for the [EU AI Act](https://artificialintelligenceact.eu/): a **code scanner** for Article 50
+transparency obligations, and a **toolkit** that classifies a system's risk tier, tracks a conformity checklist and
+generates Annex IV technical documentation ([jump to the toolkit](#eu-ai-act-toolkit-manifest-act)).
+
+The scanner is static analysis for [EU AI Act Article 50](https://artificialintelligenceact.eu/article/50/)
 transparency obligations (applicable from 2 August 2026). It scans a codebase for two things:
 
 1. **AI interfaces with no AI-disclosure language** (Article 50(1)): a chat or agent
@@ -16,6 +20,52 @@ Every finding cites the provision it checks. The reference text is in
 
 > **This is a code-review aid, not a compliance certificate.** See
 > [What this doesn't do](#what-this-doesnt-do).
+
+## EU AI Act toolkit (`manifest act`)
+
+The scanner answers "does this code disclose that it is an AI?". The toolkit answers the questions that come before and
+after: *which rules apply to this system, what is left to do, and is the paperwork complete?* It works from a small
+YAML profile of facts about your system that lives in the repo next to the code.
+
+```bash
+manifest act init                              # annotated profile listing every valid Annex III / Article 5 id
+manifest act classify system.yaml              # tier, the provisions behind it, what applies, and when
+manifest act checklist system.yaml --scan src  # conformity checklist, with the code scanner attached
+manifest act mark art9 done --evidence docs/risk-register.md
+manifest act docs system.yaml --check          # Annex IV scaffold; exit 1 while sections are unanswered
+manifest act timeline                          # application dates, with their source and caveat
+```
+
+**Classify** walks the Act's own decision order: out of scope (Art. 2) -> prohibited (Art. 5, all eight points) ->
+high-risk (Art. 6: the Annex I product route, or any of the 25 Annex III use cases, unless the Art. 6(3) derogation
+holds and the system does no profiling) -> "not high-risk, but document it" (Art. 6(4)) -> Article 50 transparency ->
+minimal. General-purpose AI model duties (Art. 51-55, with the 1e25 FLOP presumption and the open-source exemption's
+limits) and AI literacy (Art. 4) are layered on top. Duties are split by role: a deployer of a high-risk system gets
+Articles 26, 27 and 86; a provider gets Articles 9-20, 43, 47-49, 72 and 73.
+
+```text
+$ manifest act classify examples/act/cv-screener.yaml
+CV Screener: HIGH RISK
+  Annex III 4(a)  Recruitment or selection, including targeted job advertising, filtering applications...
+  Article 6(2)    Annex III use case with profiling of natural persons
+```
+
+**Checklist** items carry a status and evidence, and are merged by id when the profile changes, so progress is never
+wiped. Two rules stop it becoming theatre: an item cannot be `done` without evidence, and an Article 50 item cannot
+be `done` while the scanner still reports a likely violation for it. Open items are reported but do not fail a build by
+default (`--fail-on open` is there for when you want it strict).
+
+**Docs** lays out all 23 Annex IV sections, pre-fills only what the profile really knows, links each section to its
+checklist item, and counts the sections still marked `TODO`. It never writes filler: a scaffold that says TODO in the
+right place beats prose invented to fill a gap. A system relying on the Art. 6(3) derogation gets the Art. 6(4)
+assessment-record template instead.
+
+Eight example profiles in [`examples/act/`](examples/act/) cover every tier, including a claimed Article 5 exception
+and a systemic-risk model. Details, sources and limits: [`docs/eu-ai-act-toolkit.md`](docs/eu-ai-act-toolkit.md).
+
+> **Not legal advice, and only as good as the facts you declare.** Classification is a legal judgement that depends on
+> facts and on guidance still being issued. The toolkit makes the structure explicit and auditable; it does not decide
+> for you. Application dates are reproduced from a secondary source and may not reflect the final Official Journal text.
 
 ## It was tested on real code, and the first version was bad
 
@@ -115,7 +165,7 @@ SDK or raw HTTP, and looks for a watermark/provenance term (`c2pa`, `synthid`, `
 ## Development
 
 ```bash
-pytest          # 98 tests
+pytest          # 235 tests
 ```
 
 The suite includes a negative control (a batch job that calls a chat API but is not an

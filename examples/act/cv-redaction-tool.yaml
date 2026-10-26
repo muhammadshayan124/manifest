@@ -1,0 +1,11 @@
+name: CV Redaction Tool
+version: "1.3.0"
+provider: Example Corp
+role: provider
+intended_purpose: "Removes names, photos and contact details from CVs before a human recruiter reviews them."
+high_risk:
+  annex_iii: ["4a"]
+  profiling_of_natural_persons: false
+  derogation:
+    conditions: ["procedural_task", "preparatory_task"]
+    no_significant_risk: true

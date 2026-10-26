@@ -20,5 +20,7 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest -q
       - run: pip install ruff && ruff check src tests
+      - name: Every example profile must classify
+        run: for f in examples/act/*.yaml; do manifest act classify "$f" --json > /dev/null; done
       - name: Scan itself (must stay clean at likely_violation)
         run: manifest scan src --fail-on likely

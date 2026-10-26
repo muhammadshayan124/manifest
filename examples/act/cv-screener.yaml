@@ -1,0 +1,14 @@
+name: CV Screener
+version: "2.1.0"
+provider: Example Corp
+role: provider
+intended_purpose: "Ranks job applications against a vacancy to help recruiters shortlist candidates."
+high_risk:
+  annex_iii: ["4a"]
+  profiling_of_natural_persons: true
+transparency:
+  interacts_with_natural_persons: false
+documentation:
+  1b: "Reads applications from the customer's ATS over a REST API and writes back a ranking score."
+  1d: "Hosted SaaS with a REST API; no on-premise package."
+  2a: "Gradient-boosted ranking model trained in-house; text features from a third-party pre-trained sentence encoder."

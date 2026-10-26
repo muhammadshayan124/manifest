@@ -1,0 +1,7 @@
+name: Citizen Trust Score
+version: "1.0.0"
+provider: Example Corp
+role: provider
+intended_purpose: "Scores residents by combined social behaviour and uses the score to set access to housing and services."
+prohibited_practices:
+  declared: ["c"]

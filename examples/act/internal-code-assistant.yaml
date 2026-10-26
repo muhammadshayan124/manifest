@@ -1,0 +1,5 @@
+name: Internal Code Assistant
+version: "0.4.0"
+provider: Example Corp
+role: both
+intended_purpose: "Suggests code completions to our own engineers inside the IDE."

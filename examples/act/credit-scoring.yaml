@@ -1,0 +1,8 @@
+name: Retail Credit Scorer
+version: "5.0.0"
+provider: Example Bank
+role: deployer
+intended_purpose: "Scores consumer loan applications to support lending decisions."
+high_risk:
+  annex_iii: ["5b"]
+  profiling_of_natural_persons: true
